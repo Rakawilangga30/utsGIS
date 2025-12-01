@@ -1,46 +1,43 @@
-// Simple auth helper that uses apiRequest if available
-function saveToken(token){ try{ localStorage.setItem('mt_token', token) }catch(e){} }
+// Use global apiRequest (defined in js/api.js) and include credentials for session cookie
+// Login User
+async function login() {
+  const email = document.getElementById('email')?.value
+  const password = document.getElementById('password')?.value
+  if(!email || !password){ alert('Email dan Password wajib diisi'); return }
 
-async function login(){
-    const email = document.getElementById('email')?.value
-    const password = document.getElementById('password')?.value
-    if(!email || !password){ alert('Email & password wajib'); return }
+  const helper = window.apiRequest || (async (p, o)=>{ // fallback
+    const res = await fetch((window.API||'') + p, { method: o.method||'GET', headers: {'Content-Type':'application/json'}, body: JSON.stringify(o.body||{}), credentials: 'include' })
+    return res.json()
+  })
 
-    try{
-        const res = (window.apiRequest)
-          ? await window.apiRequest('/auth/login', {method:'POST', body:{email,password}})
-          : await fetch(window.API_BASE + '/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}).then(r=>r.json())
-
-        if(res.error){ alert(res.error); return }
-        // If backend returns token store it, otherwise store a minimal flag
-        if(res.token) saveToken(res.token)
-        alert(res.message || 'Login berhasil')
-        window.location.href = 'index.html'
-    }catch(err){
-        console.error(err)
-        alert('Login gagal, cek console untuk detil')
-    }
+  const data = await helper('/api/auth/login', { method: 'POST', body: { email, password } })
+  if(data.error){ alert(data.error); return }
+  alert(data.message || 'Login berhasil')
+  window.location.href = 'dashboard.html'
 }
 
+// Register User
 async function registerUser(){
-    const name = document.getElementById('name')?.value
-    const email = document.getElementById('email')?.value
-    const password = document.getElementById('password')?.value
-    if(!email || !password){ alert('Email & password wajib'); return }
+  const name = document.getElementById('name')?.value
+  const email = document.getElementById('email')?.value
+  const password = document.getElementById('password')?.value
+  if(!name || !email || !password){ alert('Semua data wajib diisi'); return }
 
-    try{
-        const res = (window.apiRequest)
-          ? await window.apiRequest('/auth/register', {method:'POST', body:{name,email,password}})
-          : await fetch(window.API_BASE + '/auth/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password})}).then(r=>r.json())
-
-        if(res.error){ alert(res.error); return }
-        alert(res.message || 'Registrasi berhasil')
-        window.location.href = 'login.html'
-    }catch(err){ console.error(err); alert('Registrasi gagal') }
+  const helper = window.apiRequest || (async (p, o)=>{ const res = await fetch((window.API||'') + p, { method: o.method||'GET', headers: {'Content-Type':'application/json'}, body: JSON.stringify(o.body||{}), credentials: 'include' }); return res.json() })
+  const data = await helper('/api/auth/register', { method: 'POST', body: { name, email, password } })
+  if(data.error){ alert(data.error); return }
+  alert(data.message || 'Registrasi berhasil')
+  window.location.href = 'login.html'
 }
 
-// expose to global for inline onclick usages
+// Logout helper
+async function logout(){
+  const helper = window.apiRequest || (async (p,o)=>{ const res = await fetch((window.API||'')+p,{method:o.method||'GET',credentials:'include'}); return res.json() })
+  await helper('/api/auth/logout', { method: 'POST' })
+  window.location.href = 'login.html'
+}
+
+// Expose
 window.login = login
 window.registerUser = registerUser
-
-export { login, registerUser }
+window.logout = logout

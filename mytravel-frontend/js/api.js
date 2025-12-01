@@ -1,19 +1,31 @@
-const API_BASE = window.API_BASE || '/api';
+// Backend base URL - update if necessary
+;(function(){
+    const BASE = window.API_BASE_OVERRIDE || "https://my-travel-backend-li5d.vercel.app";
 
-async function apiRequest(path, {method='GET', body, token, headers={}} = {}){
-  const opts = {method, headers: {...headers}}
-  if(body){
-    opts.body = JSON.stringify(body)
-    opts.headers['Content-Type'] = 'application/json'
-  }
-  if(token){ opts.headers['Authorization'] = 'Bearer ' + token }
-  const res = await fetch(API_BASE + path, opts)
-  const text = await res.text()
-  try{ return JSON.parse(text) }catch(e){ return text }
-}
+    async function apiRequest(path, { method = 'GET', body, headers = {}, credentials = 'include' } = {}) {
+        const opts = { method, headers: { ...headers } };
+        if (credentials) opts.credentials = credentials;
 
-// expose handy globals for non-module scripts
-window.API_BASE = API_BASE
-window.apiRequest = apiRequest
+        if (body instanceof FormData) {
+            opts.body = body;
+        } else if (body) {
+            opts.body = JSON.stringify(body);
+            opts.headers['Content-Type'] = 'application/json';
+        }
 
-export { apiRequest }
+        try {
+            const res = await fetch(BASE + path, opts);
+            const text = await res.text();
+            try { return JSON.parse(text) } catch (e) { return text }
+        } catch (err) {
+            console.error('API Error:', err);
+            return { error: 'Gagal terhubung ke server' };
+        }
+    }
+
+    // expose globals for older non-module scripts
+    window.API = BASE
+    window.apiRequest = apiRequest
+    // also export for module usage if environment supports it
+    try { if(typeof exports !== 'undefined') exports.apiRequest = apiRequest } catch(e){}
+})();

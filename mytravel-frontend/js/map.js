@@ -89,3 +89,17 @@ const catColors = {
     "Belanja": "green",
     "Taman": "orange",
 };
+
+// Allow clicking the map to add a new marker: show popup with link to add-place form
+map.on('click', function(e){
+        const lat = e.latlng.lat.toFixed(6)
+        const lng = e.latlng.lng.toFixed(6)
+        const href = `add-place.html?lat=${lat}&lng=${lng}`
+        const content = `
+            <div style="text-align:center;">
+                <b>Tambahkan mark di sini?</b><br><br>
+                <a class="btn" href="${href}">Tambahkan mark</a>
+            </div>
+        `
+        L.popup().setLatLng(e.latlng).setContent(content).openOn(map)
+})

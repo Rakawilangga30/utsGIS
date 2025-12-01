@@ -1,16 +1,17 @@
-fetch(API + "/api/places")
-    .then(res => res.json())
-    .then(data => {
-        let html = "";
-        data.forEach(p => {
-            html += `
+(async function(){
+    const helper = window.apiRequest || (async (p,o)=>{ const r = await fetch((window.API||'')+p, { credentials: 'include', ...o }); return r.json() })
+    const data = await helper('/api/places')
+    let html = ''
+    ;(data||[]).forEach(p=>{
+        html += `
             <div class="card">
-                <img class="place-img" src="${API}/api/photo/${p.photo_id}" />
+                <img class="place-img" src="${(window.API||'')}/api/photo/${p.photo_id}" />
                 <h2>${p.name}</h2>
-                <p>${p.description}</p>
+                <p>${p.description || ''}</p>
                 <a class="btn" href="detail.html?id=${p._id}">Detail</a>
             </div>
-            `;
-        });
-        document.getElementById("places").innerHTML = html;
-    });
+        `
+    })
+    const el = document.getElementById('places')
+    if(el) el.innerHTML = html
+})()

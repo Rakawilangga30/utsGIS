@@ -7,7 +7,10 @@
 
 <body>
 <nav>
-    <h1>MyTravel</h1>
+        <div style="display:flex;align-items:center">
+            <button class="back-btn" onclick="history.back()">← Back</button>
+            <h1>MyTravel</h1>
+        </div>
 </nav>
 
 <div class="container card">
@@ -18,8 +21,8 @@
         <input name="category" placeholder="Kategori">
         <textarea name="description" placeholder="Deskripsi"></textarea>
         <input name="address" placeholder="Alamat">
-        <input name="lat" placeholder="Latitude">
-        <input name="lng" placeholder="Longitude">
+        <input id="lat" name="lat" placeholder="Latitude">
+        <input id="lng" name="lng" placeholder="Longitude">
         <input name="photo" type="file">
 
         <button type="submit">Simpan</button>
@@ -28,23 +31,32 @@
 
 <script src="js/api.js"></script>
 <script>
-document.getElementById("addForm").onsubmit = function(e) {
-    e.preventDefault();
-    let form = new FormData(this);
+// Prefill lat/lng from query params if present
+;(function(){
+    const params = new URLSearchParams(window.location.search)
+    const lat = params.get('lat')
+    const lng = params.get('lng')
+    if(lat) document.getElementById('lat').value = lat
+    if(lng) document.getElementById('lng').value = lng
 
-    fetch(API + "/api/places", {
-        method: "POST",
-        body: form
-    })
-    .then(res => res.json())
-    .then(d => {
-        if (d.error) alert(d.error);
-        else {
-            alert("Tempat berhasil ditambah!");
-            window.location.href = "index.html";
+    document.getElementById('addForm').onsubmit = async function(e){
+        e.preventDefault();
+        const form = new FormData(this)
+        // use global apiRequest if available to include credentials
+        if(window.apiRequest){
+            // send form via fetch directly to BASE + /api/places
+            const res = await fetch((window.API||'') + '/api/places', { method: 'POST', body: form, credentials: 'include' })
+            const d = await res.json()
+            if(d.error) alert(d.error)
+            else { alert('Tempat berhasil ditambah!'); window.location.href='index.html' }
+        } else {
+            const res = await fetch(API + '/api/places', { method: 'POST', body: form })
+            const d = await res.json()
+            if(d.error) alert(d.error)
+            else { alert('Tempat berhasil ditambah!'); window.location.href='index.html' }
         }
-    });
-}
+    }
+})()
 </script>
 
 </body>

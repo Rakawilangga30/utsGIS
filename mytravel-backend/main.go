@@ -4,28 +4,23 @@ import (
 	"log"
 	"net/http"
 	"os"
-	
-	// Pastikan module path ini sesuai dengan di go.mod Anda
-	"MyTravel/api"
+
+	// Import folder "api", tapi nama packagenya sekarang "handler"
+	"MyTravel/api" 
 )
 
 func main() {
-	// 1. Panggil koneksi DB (ini memuat .env di lokal)
-	api.ConnectDB()
+	// SetupRouter dari package handler (karena di api/api.go package handler)
+	r := handler.SetupRouter()
 
-	// 2. Setup Routing
-	http.Handle("/", api.Handler())
-
-	// 3. Setup Port
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// 4. Start Server
 	log.Println("MyTravel backend running on port:", port)
-	err := http.ListenAndServe(":"+port, nil)
+	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
-		log.Fatal("Server error:", err)
+		log.Fatal(err)
 	}
 }
