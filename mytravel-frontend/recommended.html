@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rekomendasi Wisata - MyTravel</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+<nav>
+    <h1>Rekomendasi</h1>
+    <div class="menu">
+        <a href="index.html">Map</a>
+        <a href="list.html">List</a>
+        <a href="recommended.html">Rekomendasi</a>
+        <a href="dashboard.html">Dashboard</a>
+    </div>
+</nav>
+
+<div class="container">
+    <h2>Rekomendasi Untuk Kamu</h2>
+    <p>Berdasarkan review, rating, dan kategori populer.</p>
+
+    <div id="recom"></div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/recommended.js"></script>
+<script>
+let userLocation = null;
+
+// Ambil lokasi user saat halaman dibuka
+navigator.geolocation.getCurrentPosition((pos) => {
+    userLocation = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+    };
+
+    // Reload rekomendasi setelah dapat lokasi user
+    initRecommendation();
+}, () => {
+    // Jika user blokir lokasi → tetap jalan tanpa lokasi
+    initRecommendation();
+});
+</script>
+
+
+</body>
+</html>

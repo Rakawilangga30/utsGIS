@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Tempat Wisata</title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+</head>
+
+<body>
+
+<nav>
+    <h1>Edit Tempat Wisata</h1>
+    <div class="menu">
+        <a href="index.html">Home</a>
+        <a href="dashboard.html">Dashboard</a>
+    </div>
+</nav>
+
+<div class="container card">
+
+    <h2>Edit Data Wisata</h2>
+
+    <form id="editForm" enctype="multipart/form-data">
+
+        <input id="name" name="name" placeholder="Nama tempat">
+        <input id="category" name="category" placeholder="Kategori">
+        <textarea id="description" name="description" placeholder="Deskripsi"></textarea>
+        <input id="address" name="address" placeholder="Alamat">
+
+        <label><b>Lokasi (Klik pada map)</b></label>
+        <input id="lat" name="lat" placeholder="Latitude">
+        <input id="lng" name="lng" placeholder="Longitude">
+
+        <div id="map" style="height: 280px; margin-bottom:20px;"></div>
+
+        <label><b>Foto (Opsional)</b></label>
+        <input id="photo" name="photo" type="file">
+
+        <button type="submit">Simpan Perubahan</button>
+
+    </form>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="js/edit-place.js"></script>
+
+</body>
+</html>

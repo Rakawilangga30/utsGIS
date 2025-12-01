@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyTravel - Map View</title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- LEAFLET -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+</head>
+
+<body>
+
+<nav>
+    <h1>MyTravel</h1>
+    <div class="menu">
+        <a href="index.html">Map</a>
+        <a href="add-place.html">Tambah</a>
+        <a href="dashboard.html">Dashboard</a>
+        <a href="login.html">Login</a>
+    </div>
+</nav>
+
+<div class="container card" style="margin-top:20px;">
+    <h2>Filter Kategori</h2>
+
+    <div id="categories">
+        <!-- Checkbox kategori akan di-generate otomatis -->
+    </div>
+</div>
+
+<div id="map" style="height: 520px; margin: 20px;"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="js/api.js"></script>
+<script src="js/map.js"></script>
+
+</body>
+</html>

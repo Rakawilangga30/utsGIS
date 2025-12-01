@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Detail Wisata</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+<nav>
+    <h1>MyTravel</h1>
+</nav>
+
+<div class="container">
+    <div id="detail" class="card"></div>
+
+    <div class="card">
+        <h3>Beri Review</h3>
+        <input id="rating" placeholder="Rating (1-5)">
+        <textarea id="comment" placeholder="Komentar"></textarea>
+        <button onclick="addReview()">Kirim</button>
+    </div>
+
+    <div id="reviews"></div>
+</div>
+
+
+<script src="js/api.js"></script>
+<script src="js/detail.js"></script>
+
+</body>
+</html>
+    

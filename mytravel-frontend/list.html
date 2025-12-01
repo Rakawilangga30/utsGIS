@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>List Tempat Wisata - MyTravel</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+<nav>
+    <h1>MyTravel</h1>
+    <div class="menu">
+        <a href="index.html">Map</a>
+        <a href="list.html">List View</a>
+        <a href="add-place.html">Tambah</a>
+        <a href="dashboard.html">Dashboard</a>
+    </div>
+</nav>
+
+<div class="container">
+
+    <h2>Daftar Tempat Wisata</h2>
+
+    <div style="margin-bottom:20px;">
+        <select id="sort" style="padding:10px;">
+            <option value="newest">Terbaru</option>
+            <option value="rating">Rating Tertinggi</option>
+            <option value="name">A–Z</option>
+        </select>
+
+        <select id="filterCat" style="padding:10px;">
+            <option value="all">Semua Kategori</option>
+        </select>
+    </div>
+
+    <div id="list"></div>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/list.js"></script>
+
+</body>
+</html>

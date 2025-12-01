@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tambah Wisata</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+<nav>
+    <h1>MyTravel</h1>
+</nav>
+
+<div class="container card">
+    <h2>Tambah Wisata</h2>
+
+    <form id="addForm" enctype="multipart/form-data">
+        <input name="name" placeholder="Nama tempat">
+        <input name="category" placeholder="Kategori">
+        <textarea name="description" placeholder="Deskripsi"></textarea>
+        <input name="address" placeholder="Alamat">
+        <input name="lat" placeholder="Latitude">
+        <input name="lng" placeholder="Longitude">
+        <input name="photo" type="file">
+
+        <button type="submit">Simpan</button>
+    </form>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+document.getElementById("addForm").onsubmit = function(e) {
+    e.preventDefault();
+    let form = new FormData(this);
+
+    fetch(API + "/api/places", {
+        method: "POST",
+        body: form
+    })
+    .then(res => res.json())
+    .then(d => {
+        if (d.error) alert(d.error);
+        else {
+            alert("Tempat berhasil ditambah!");
+            window.location.href = "index.html";
+        }
+    });
+}
+</script>
+
+</body>
+</html>
