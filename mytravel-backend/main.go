@@ -1,48 +1,31 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
+	
+	// Pastikan module path ini sesuai dengan di go.mod Anda
 	"MyTravel/api"
 )
 
 func main() {
-	// Routing utama
+	// 1. Panggil koneksi DB (ini memuat .env di lokal)
+	api.ConnectDB()
+
+	// 2. Setup Routing
 	http.Handle("/", api.Handler())
 
+	// 3. Setup Port
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: nil,
+	// 4. Start Server
+	log.Println("MyTravel backend running on port:", port)
+	err := http.ListenAndServe(":"+port, nil)
+	if err != nil {
+		log.Fatal("Server error:", err)
 	}
-
-	go func() {
-		log.Println("MyTravel backend running on port:", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
-		}
-	}()
-
-	// Wait for interrupt signal to gracefully shutdown the server
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	sig := <-quit
-	log.Printf("Received signal %v, shutting down...", sig)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
-	log.Println("Server exiting")
 }

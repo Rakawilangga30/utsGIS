@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync" // [PENTING] Untuk memastikan DB hanya konek sekali
 	"time"
 
 	"github.com/gorilla/sessions"
@@ -21,54 +22,78 @@ import (
 )
 
 /* =======================================================
-   GLOBAL MONGO + GRIDFS + SESSION
+   GLOBAL VARS
 ======================================================= */
 
-var mongoDB *mongo.Database
-var photoBucket *gridfs.Bucket
-var Store *sessions.CookieStore
-
-var Users *mongo.Collection
-var Places *mongo.Collection
-var Reviews *mongo.Collection
+var (
+	mongoDB     *mongo.Database
+	photoBucket *gridfs.Bucket
+	Store       *sessions.CookieStore
+	Users       *mongo.Collection
+	Places      *mongo.Collection
+	Reviews     *mongo.Collection
+	dbOnce      sync.Once // Singleton pattern untuk DB
+)
 
 /* =======================================================
-   INIT (ENV + MONGO)
+   KONEKSI DATABASE (Lazy Connection)
 ======================================================= */
 
-func init() {
-	godotenv.Load()
+// ConnectDB memastikan koneksi hanya dibuat sekali (aman untuk Vercel & Local)
+func ConnectDB() {
+	dbOnce.Do(func() {
+		// Load .env tapi abaikan error (karena di Vercel tidak ada file .env fisik)
+		_ = godotenv.Load()
 
-	uri := os.Getenv("MONGO_URI")
-	db := os.Getenv("DB_NAME")
-	secret := os.Getenv("SESSION_KEY")
+		uri := os.Getenv("MONGO_URI")
+		dbName := os.Getenv("DB_NAME")
+		secret := os.Getenv("SESSION_KEY")
 
-	if secret == "" {
-		secret = "MYTRAVEL_SECRET"
-	}
+		// Fallback default value
+		if dbName == "" {
+			dbName = "MyTravelDB"
+		}
+		if secret == "" {
+			secret = "MYTRAVEL_SECRET_KEY_GANTI_INI"
+		}
 
-	Store = sessions.NewCookieStore([]byte(secret))
+		if uri == "" {
+			fmt.Println("Warning: MONGO_URI kosong!")
+		}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		// Setup Session
+		Store = sessions.NewCookieStore([]byte(secret))
+		Store.Options = &sessions.Options{
+			Path:     "/",
+			MaxAge:   3600 * 24, // 1 hari
+			HttpOnly: true,
+			// Penting: SameSiteNoneMode diperlukan jika frontend & backend beda domain/port
+			SameSite: http.SameSiteNoneMode,
+			Secure:   true, // Harus true jika menggunakan SameSiteNoneMode
+		}
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		panic(err)
-	}
+		// Setup Mongo
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	mongoDB = client.Database(db)
-	photoBucket, _ = gridfs.NewBucket(mongoDB)
+		client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+		if err != nil {
+			fmt.Println("Mongo Connect Error:", err)
+			return
+		}
 
-	Users = mongoDB.Collection("Users")
-	Places = mongoDB.Collection("Data_Travel")
-	Reviews = mongoDB.Collection("Reviews")
+		mongoDB = client.Database(dbName)
+		photoBucket, _ = gridfs.NewBucket(mongoDB)
+		Users = mongoDB.Collection("Users")
+		Places = mongoDB.Collection("Data_Travel")
+		Reviews = mongoDB.Collection("Reviews")
 
-	fmt.Println("MongoDB Connected:", db)
+		fmt.Println("MongoDB Connected to:", dbName)
+	})
 }
 
 /* =======================================================
-   HELPERS
+   HELPERS & CORS (FIXED)
 ======================================================= */
 
 func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
@@ -77,13 +102,26 @@ func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func EnableCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+// EnableCORS diperbaiki untuk mendukung Cookie/Login
+func EnableCORS(w http.ResponseWriter, r *http.Request) {
+	// Ambil Origin dari request (misal: http://127.0.0.1:5500)
+	origin := r.Header.Get("Origin")
+	
+	// Jika ada origin, izinkan spesifik (bukan *) agar Credentials bisa true
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true") // Wajib true agar session login tersimpan
 }
 
 func getSession(r *http.Request) (*sessions.Session, error) {
+	// Pastikan Store sudah diinit sebelum dipanggil
+	if Store == nil {
+		ConnectDB()
+	}
 	return Store.Get(r, "mytravel-session")
 }
 
@@ -93,21 +131,22 @@ func requireLogin(w http.ResponseWriter, r *http.Request) (string, string, bool)
 	role, ok2 := sess.Values["role"].(string)
 
 	if !ok1 || !ok2 {
-		jsonResponse(w, 401, map[string]string{"error": "unauthorized"})
+		jsonResponse(w, 401, map[string]string{"error": "unauthorized - silakan login"})
 		return "", "", false
 	}
-
 	return id, role, true
 }
 
 /* =======================================================
-   MAIN ROUTER (ENTRY FOR VERCEL)
+   MAIN ROUTER (Entry Point)
 ======================================================= */
 
 func Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Pastikan DB connect setiap ada request
+		ConnectDB()
 
-		EnableCORS(w)
+		EnableCORS(w, r)
 		if r.Method == "OPTIONS" {
 			return
 		}
@@ -135,10 +174,21 @@ func Handler() http.HandlerFunc {
 		if p == "/api/places" && r.Method == "POST" {
 			CreatePlace(w, r); return
 		}
-		if strings.HasPrefix(p, "/api/places/") && r.Method == "PUT" {
-			UpdatePlace(w, r); return
+		// Handle ID di URL (e.g., /api/places/123)
+		if strings.HasPrefix(p, "/api/places/") {
+			if r.Method == "PUT" {
+				UpdatePlace(w, r); return
+			}
+			if r.Method == "DELETE" {
+				DeletePlace(w, r); return
+			}
 		}
-		if strings.HasPrefix(p, "/api/places/") && r.Method == "DELETE" {
+
+		/* -------- MY PLACES (Dashboard) -------- */
+		if p == "/api/my-places" && r.Method == "GET" {
+			GetMyPlaces(w, r); return
+		}
+		if strings.HasPrefix(p, "/api/my-places/") && r.Method == "DELETE" {
 			DeletePlace(w, r); return
 		}
 
@@ -149,6 +199,15 @@ func Handler() http.HandlerFunc {
 		if p == "/api/reviews" && r.Method == "POST" {
 			CreateReview(w, r); return
 		}
+		
+		// Dashboard My Reviews
+		if p == "/api/my-reviews" && r.Method == "GET" {
+			GetMyReviews(w, r); return
+		}
+		if strings.HasPrefix(p, "/api/my-reviews/") && r.Method == "DELETE" {
+			DeleteReview(w, r); return
+		}
+		
 		if strings.HasPrefix(p, "/api/reviews/") && r.Method == "DELETE" {
 			DeleteReview(w, r); return
 		}
@@ -158,13 +217,15 @@ func Handler() http.HandlerFunc {
 			GetPhoto(w, r); return
 		}
 
-		jsonResponse(w, 404, map[string]string{"error": "route not found"})
+		jsonResponse(w, 404, map[string]string{"error": "route not found: " + p})
 	}
 }
 
 /* =======================================================
-   AUTH: REGISTER + LOGIN + LOGOUT + ME
+   FUNGSI HANDLER (CRUD)
 ======================================================= */
+
+// --- AUTH ---
 
 func Register(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -172,7 +233,6 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-
 	json.NewDecoder(r.Body).Decode(&body)
 
 	if body.Email == "" || body.Password == "" {
@@ -202,7 +262,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-
 	json.NewDecoder(r.Body).Decode(&body)
 
 	var user bson.M
@@ -233,15 +292,12 @@ func Logout(w http.ResponseWriter, r *http.Request) {
 	sess, _ := getSession(r)
 	sess.Options.MaxAge = -1
 	sess.Save(r, w)
-
 	jsonResponse(w, 200, map[string]string{"message": "logout success"})
 }
 
 func Me(w http.ResponseWriter, r *http.Request) {
 	uid, role, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
 	jsonResponse(w, 200, map[string]string{
 		"user_id": uid,
@@ -249,15 +305,11 @@ func Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-/* =======================================================
-   PLACES (CRUD + UPLOAD FOTO GRIDFS)
-======================================================= */
+// --- PLACES ---
 
 func CreatePlace(w http.ResponseWriter, r *http.Request) {
 	uid, _, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
 	r.ParseMultipartForm(10 << 20)
 
@@ -268,30 +320,19 @@ func CreatePlace(w http.ResponseWriter, r *http.Request) {
 	latStr := r.FormValue("lat")
 	lngStr := r.FormValue("lng")
 
-	if name == "" || latStr == "" || lngStr == "" {
-		jsonResponse(w, 400, map[string]string{"error": "invalid form"})
-		return
-	}
-
 	lat, _ := strconv.ParseFloat(latStr, 64)
 	lng, _ := strconv.ParseFloat(lngStr, 64)
 
 	file, header, err := r.FormFile("photo")
-	if err != nil {
-		jsonResponse(w, 400, map[string]string{"error": "photo required"})
-		return
+	photoID := ""
+	
+	if err == nil {
+		defer file.Close()
+		uploadStream, _ := photoBucket.OpenUploadStream(header.Filename)
+		io.Copy(uploadStream, file)
+		uploadStream.Close()
+		photoID = uploadStream.FileID.(primitive.ObjectID).Hex()
 	}
-	defer file.Close()
-
-	uploadStream, err := photoBucket.OpenUploadStream(header.Filename)
-	if err != nil {
-		jsonResponse(w, 500, map[string]string{"error": "upload failed"})
-		return
-	}
-	io.Copy(uploadStream, file)
-	uploadStream.Close()
-
-	photoID := uploadStream.FileID.(primitive.ObjectID).Hex()
 
 	Places.InsertOne(context.Background(), bson.M{
 		"name":        name,
@@ -312,15 +353,24 @@ func GetPlaces(w http.ResponseWriter, r *http.Request) {
 	cursor, _ := Places.Find(context.Background(), bson.M{})
 	var places []bson.M
 	cursor.All(context.Background(), &places)
+	if places == nil { places = []bson.M{} }
+	jsonResponse(w, 200, places)
+}
 
+func GetMyPlaces(w http.ResponseWriter, r *http.Request) {
+	uid, _, ok := requireLogin(w, r)
+	if !ok { return }
+
+	cursor, _ := Places.Find(context.Background(), bson.M{"created_by": uid})
+	var places []bson.M
+	cursor.All(context.Background(), &places)
+	if places == nil { places = []bson.M{} }
 	jsonResponse(w, 200, places)
 }
 
 func UpdatePlace(w http.ResponseWriter, r *http.Request) {
 	uid, role, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
 	id := strings.TrimPrefix(r.URL.Path, "/api/places/")
 	objID, _ := primitive.ObjectIDFromHex(id)
@@ -332,62 +382,59 @@ func UpdatePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// hanya admin atau pemilik yang boleh update
 	if role != "admin" && old["created_by"] != uid {
 		jsonResponse(w, 403, map[string]string{"error": "permission denied"})
 		return
 	}
 
 	r.ParseMultipartForm(10 << 20)
-
-	data := bson.M{
+	
+	// Update data dasar
+	updateData := bson.M{
 		"name":        r.FormValue("name"),
 		"category":    r.FormValue("category"),
 		"description": r.FormValue("description"),
 		"address":     r.FormValue("address"),
+		"lat":         0.0,
+		"lng":         0.0,
 	}
+	
+	if val := r.FormValue("lat"); val != "" {
+	    f, _ := strconv.ParseFloat(val, 64)
+	    updateData["lat"] = f
+	} else { updateData["lat"] = old["lat"] }
+	
+	if val := r.FormValue("lng"); val != "" {
+	    f, _ := strconv.ParseFloat(val, 64)
+	    updateData["lng"] = f
+	} else { updateData["lng"] = old["lng"] }
 
-	lat, _ := strconv.ParseFloat(r.FormValue("lat"), 64)
-	lng, _ := strconv.ParseFloat(r.FormValue("lng"), 64)
-
-	data["lat"] = lat
-	data["lng"] = lng
-
-	// cek apakah ada foto baru
+	// Cek foto baru
 	file, header, err := r.FormFile("photo")
-	if err == nil { // ada foto → upload baru
+	if err == nil {
 		defer file.Close()
-
 		upload, _ := photoBucket.OpenUploadStream(header.Filename)
 		io.Copy(upload, file)
 		upload.Close()
-
-		newID := upload.FileID.(primitive.ObjectID).Hex()
-		data["photo_id"] = newID
+		updateData["photo_id"] = upload.FileID.(primitive.ObjectID).Hex()
 	}
 
-	// update database
-	Places.UpdateOne(context.Background(),
-		bson.M{"_id": objID},
-		bson.M{"$set": data},
-	)
-
+	Places.UpdateOne(context.Background(), bson.M{"_id": objID}, bson.M{"$set": updateData})
 	jsonResponse(w, 200, map[string]string{"message": "place updated"})
 }
 
-
 func DeletePlace(w http.ResponseWriter, r *http.Request) {
 	uid, role, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
+	// Handle dua jenis URL (api/places/ID atau api/my-places/ID)
 	id := strings.TrimPrefix(r.URL.Path, "/api/places/")
+	id = strings.TrimPrefix(id, "/api/my-places/")
+	
 	objID, _ := primitive.ObjectIDFromHex(id)
 
 	var place bson.M
-	err := Places.FindOne(context.Background(), bson.M{"_id": objID}).Decode(&place)
-	if err != nil {
+	if err := Places.FindOne(context.Background(), bson.M{"_id": objID}).Decode(&place); err != nil {
 		jsonResponse(w, 404, map[string]string{"error": "place not found"})
 		return
 	}
@@ -398,26 +445,20 @@ func DeletePlace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Places.DeleteOne(context.Background(), bson.M{"_id": objID})
-
 	jsonResponse(w, 200, map[string]string{"message": "place deleted"})
 }
 
-/* =======================================================
-   REVIEWS (CRUD)
-======================================================= */
+// --- REVIEWS ---
 
 func CreateReview(w http.ResponseWriter, r *http.Request) {
 	uid, _, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
 	var body struct {
 		PlaceID string `json:"place_id"`
 		Rating  int    `json:"rating"`
 		Comment string `json:"comment"`
 	}
-
 	json.NewDecoder(r.Body).Decode(&body)
 
 	Reviews.InsertOne(context.Background(), bson.M{
@@ -433,26 +474,73 @@ func CreateReview(w http.ResponseWriter, r *http.Request) {
 
 func GetReviews(w http.ResponseWriter, r *http.Request) {
 	placeID := r.URL.Query().Get("place_id")
+	
+	// Jika tidak ada parameter place_id, ambil semua (untuk rekomendasi)
+	filter := bson.M{}
+	if placeID != "" {
+	    filter = bson.M{"place_id": placeID}
+	}
 
-	cursor, _ := Reviews.Find(context.Background(), bson.M{"place_id": placeID})
+	cursor, _ := Reviews.Find(context.Background(), filter)
 	var list []bson.M
 	cursor.All(context.Background(), &list)
-
+	if list == nil { list = []bson.M{} }
+	
 	jsonResponse(w, 200, list)
 }
 
+func GetMyReviews(w http.ResponseWriter, r *http.Request) {
+    uid, _, ok := requireLogin(w, r)
+    if !ok { return }
+    
+    // Agregation pipeline untuk join dengan nama tempat
+    pipeline := bson.A{
+        bson.M{"$match": bson.M{"user_id": uid}},
+        // Konversi place_id (string) ke ObjectId agar bisa di-lookup
+        bson.M{"$addFields": bson.M{
+            "place_obj_id": bson.M{"$toObjectId": "$place_id"},
+        }},
+        bson.M{"$lookup": bson.M{
+            "from": "Data_Travel",
+            "localField": "place_obj_id",
+            "foreignField": "_id",
+            "as": "place_info",
+        }},
+        bson.M{"$unwind": bson.M{
+            "path": "$place_info", 
+            "preserveNullAndEmptyArrays": true, // Biar review tetap muncul walau tempat dihapus
+        }},
+        bson.M{"$project": bson.M{
+            "_id": 1, "rating": 1, "comment": 1,
+            "place_name": "$place_info.name",
+            "place_id": 1,
+        }},
+    }
+    
+    cursor, err := Reviews.Aggregate(context.Background(), pipeline)
+    if err != nil {
+        jsonResponse(w, 500, map[string]string{"error": err.Error()})
+        return
+    }
+    
+    var list []bson.M
+    cursor.All(context.Background(), &list)
+    if list == nil { list = []bson.M{} }
+    
+    jsonResponse(w, 200, list)
+}
+
+
 func DeleteReview(w http.ResponseWriter, r *http.Request) {
 	uid, role, ok := requireLogin(w, r)
-	if !ok {
-		return
-	}
+	if !ok { return }
 
 	id := strings.TrimPrefix(r.URL.Path, "/api/reviews/")
+	id = strings.TrimPrefix(id, "/api/my-reviews/")
 	objID, _ := primitive.ObjectIDFromHex(id)
 
 	var rev bson.M
-	err := Reviews.FindOne(context.Background(), bson.M{"_id": objID}).Decode(&rev)
-	if err != nil {
+	if err := Reviews.FindOne(context.Background(), bson.M{"_id": objID}).Decode(&rev); err != nil {
 		jsonResponse(w, 404, map[string]string{"error": "review not found"})
 		return
 	}
@@ -463,13 +551,10 @@ func DeleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Reviews.DeleteOne(context.Background(), bson.M{"_id": objID})
-
 	jsonResponse(w, 200, map[string]string{"message": "review deleted"})
 }
 
-/* =======================================================
-   PHOTO (GET FROM GRIDFS)
-======================================================= */
+// --- PHOTO ---
 
 func GetPhoto(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/photo/")
@@ -480,6 +565,8 @@ func GetPhoto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
+	// Cache control biar gambar tidak diload ulang terus
+	w.Header().Set("Cache-Control", "public, max-age=86400") 
 
 	stream, err := photoBucket.OpenDownloadStream(objID)
 	if err != nil {
@@ -487,6 +574,5 @@ func GetPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer stream.Close()
-
 	io.Copy(w, stream)
 }
